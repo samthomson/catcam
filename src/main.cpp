@@ -83,7 +83,7 @@ const char* nostrPrivateKeyHex = NOSTR_PRIVKEY;
 const char* blossomServer = BLOSSOM_SERVER;
 const char* nostrRelayHost = NOSTR_RELAY_HOST;
 const char* cameraName = CAMERA_NAME;
-const unsigned long CAPTURE_INTERVAL = 60000;  // 60 seconds (1 minute)
+const unsigned long CAPTURE_INTERVAL = 30000;  // 30 seconds
 
 String nostrPubkey = "";
 uint8_t privKeyBytes[32];
@@ -207,7 +207,7 @@ void setup() {
   Serial.println("       CAT CAM - ESP32-CAM");
   Serial.println("===========================================");
   Serial.printf("Camera: %s\n", cameraName);
-  Serial.println("Capture interval: 60 seconds");
+  Serial.println("Capture interval: 30 seconds");
   
   // Initialize random seed and crypto
   randomSeed(analogRead(0) ^ micros());
@@ -241,7 +241,7 @@ void setup() {
   derivePubkey();
   
   Serial.println("\n===========================================");
-  Serial.println("Ready! Taking photos every 60 seconds");
+  Serial.println("Ready! Taking photos every 30 seconds");
   Serial.println("===========================================\n");
 }
 
@@ -264,7 +264,13 @@ void loop() {
     if (fb) {
       Serial.printf("Photo captured! Size: %u bytes\n", fb->len);
       
-      // Check WiFi signal
+      // Check WiFi connection
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi disconnected! Reconnecting...");
+        WiFi.reconnect();
+        delay(5000);
+      }
+      
       int rssi = WiFi.RSSI();
       Serial.printf("WiFi signal: %d dBm\n", rssi);
       
@@ -306,6 +312,8 @@ void connectWiFi() {
   Serial.printf("Password length: %d\n", strlen(pass));
   
   WiFi.mode(WIFI_STA);
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);  // Max WiFi power
+  WiFi.setSleep(false);  // Disable WiFi sleep for better reliability
   WiFi.begin(ssid, pass);
   Serial.print("Connecting to WiFi");
   
