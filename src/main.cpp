@@ -83,7 +83,7 @@ const char* nostrPrivateKeyHex = NOSTR_PRIVKEY;
 const char* blossomServer = BLOSSOM_SERVER;
 const char* nostrRelayHost = NOSTR_RELAY_HOST;
 const char* cameraName = CAMERA_NAME;
-const unsigned long captureInterval = CAPTURE_INTERVAL_MS;
+const unsigned long CAPTURE_INTERVAL = 60000;  // 60 seconds (1 minute)
 
 String nostrPubkey = "";
 uint8_t privKeyBytes[32];
@@ -96,6 +96,7 @@ void connectWiFi();
 bool initCamera();
 camera_fb_t* capturePhoto();
 String uploadToBlossom(camera_fb_t* fb);
+bool publishNostrEvent(const String& imageUrl, int rssi);
 void blinkLED(int times, int delayMs);
 
 // Crypto functions
@@ -206,7 +207,7 @@ void setup() {
   Serial.println("       CAT CAM - ESP32-CAM");
   Serial.println("===========================================");
   Serial.printf("Camera: %s\n", cameraName);
-  Serial.printf("Capture interval: %lu ms\n", captureInterval);
+  Serial.println("Capture interval: 60 seconds");
   
   // Initialize random seed and crypto
   randomSeed(analogRead(0) ^ micros());
@@ -240,7 +241,7 @@ void setup() {
   derivePubkey();
   
   Serial.println("\n===========================================");
-  Serial.println("Ready! Taking photos every " + String(captureInterval / 1000) + " seconds");
+  Serial.println("Ready! Taking photos every 60 seconds");
   Serial.println("===========================================\n");
 }
 
@@ -252,7 +253,7 @@ void loop() {
   unsigned long now = millis();
   
   // Check if it's time to capture
-  if (now - lastCapture >= captureInterval || lastCapture == 0) {
+  if (now - lastCapture >= CAPTURE_INTERVAL || lastCapture == 0) {
     lastCapture = now;
     
     Serial.println("\n--- Capturing photo ---");
@@ -263,6 +264,10 @@ void loop() {
     if (fb) {
       Serial.printf("Photo captured! Size: %u bytes\n", fb->len);
       
+      // Check WiFi signal
+      int rssi = WiFi.RSSI();
+      Serial.printf("WiFi signal: %d dBm\n", rssi);
+      
       // Upload to Blossom
       String blobUrl = uploadToBlossom(fb);
       if (blobUrl.length() > 0) {
@@ -270,10 +275,15 @@ void loop() {
         Serial.println("URL: " + blobUrl);
         blinkLED(2, 100);
         
-        // TODO: Post to Nostr relay with image URL
-        // For now, just log the URL
+        // Post to Nostr relay with signal strength
+        if (publishNostrEvent(blobUrl, rssi)) {
+          Serial.println("Posted to Nostr!");
+        } else {
+          Serial.println("Nostr post failed");
+        }
       } else {
         Serial.println("Upload failed!");
+        Serial.printf("WiFi still connected: %s\n", WiFi.status() == WL_CONNECTED ? "yes" : "no");
         blinkLED(5, 50);
       }
       
@@ -392,8 +402,8 @@ bool initCamera() {
     s->set_wpc(s, 1);            // 0 = disable, 1 = enable
     s->set_raw_gma(s, 1);        // 0 = disable, 1 = enable
     s->set_lenc(s, 1);           // 0 = disable, 1 = enable
-    s->set_hmirror(s, 0);        // 0 = disable, 1 = enable
-    s->set_vflip(s, 0);          // 0 = disable, 1 = enable
+    s->set_hmirror(s, 1);        // 1 = mirror horizontally (fix reversed image)
+    s->set_vflip(s, 0);          // 0 = no vertical flip
   }
   
   return true;
@@ -465,15 +475,21 @@ String uploadToBlossom(camera_fb_t* fb) {
   
   // Create HTTPS client
   WiFiClientSecure client;
-  client.setInsecure();  // Skip certificate verification (for simplicity)
+  client.setInsecure();
+  client.setTimeout(60);  // 60 sec SSL timeout
   
   HTTPClient http;
-  http.begin(client, uploadUrl);
+  if (!http.begin(client, uploadUrl)) {
+    Serial.println("Failed to begin HTTP connection");
+    return "";
+  }
+  
   http.addHeader("Content-Type", "image/jpeg");
   http.addHeader("Authorization", "Nostr " + base64Auth);
-  http.setTimeout(30000);  // 30 second timeout
+  http.setTimeout(60000);  // 60 second timeout
   
   // Upload the image
+  Serial.println("Starting upload...");
   int httpCode = http.PUT(fb->buf, fb->len);
   
   String result = "";
@@ -544,6 +560,155 @@ String createAuthEvent(const String& url, const String& method, const String& sh
   event += "\"sig\":\"" + signature + "\"}";
   
   return event;
+}
+
+// ===========================================
+// Publish Nostr Event (kind 1 note)
+// ===========================================
+bool publishNostrEvent(const String& imageUrl, int rssi) {
+  unsigned long createdAt = (unsigned long)time(nullptr);
+  
+  // Build content with image URL
+  String content = imageUrl;
+  
+  // Build tags array with imeta and signal strength
+  String tags = "[[\"imeta\",\"url " + imageUrl + "\",\"m image/jpeg\"]";
+  tags += ",[\"signal\",\"" + String(rssi) + " dBm\"]]";
+  
+  // Canonical form for event ID (kind 1 = text note)
+  int kind = 1;
+  String canonical = "[0,\"" + nostrPubkey + "\"," + String(createdAt) + "," + String(kind) + "," + tags + ",\"" + content + "\"]";
+  
+  // Calculate event ID
+  uint8_t eventIdBytes[32];
+  sha256Raw((const uint8_t*)canonical.c_str(), canonical.length(), eventIdBytes);
+  String eventId = bytesToHex(eventIdBytes, 32);
+  
+  // Sign the event
+  uint8_t sig[64];
+  if (!schnorrSign(privKeyBytes, eventIdBytes, sig)) {
+    Serial.println("Failed to sign Nostr event");
+    return false;
+  }
+  String signature = bytesToHex(sig, 64);
+  
+  // Build the event JSON
+  String event = "{\"id\":\"" + eventId + "\",";
+  event += "\"pubkey\":\"" + nostrPubkey + "\",";
+  event += "\"created_at\":" + String(createdAt) + ",";
+  event += "\"kind\":" + String(kind) + ",";
+  event += "\"tags\":" + tags + ",";
+  event += "\"content\":\"" + content + "\",";
+  event += "\"sig\":\"" + signature + "\"}";
+  
+  // Send to relay
+  Serial.println("Publishing to relay: " + String(nostrRelayHost));
+  
+  WiFiClientSecure client;
+  client.setInsecure();
+  
+  // Connect to WebSocket relay
+  if (!client.connect(nostrRelayHost, 443)) {
+    Serial.println("Failed to connect to relay");
+    return false;
+  }
+  
+  // Send WebSocket upgrade request
+  String wsRequest = "GET / HTTP/1.1\r\n";
+  wsRequest += "Host: " + String(nostrRelayHost) + "\r\n";
+  wsRequest += "Upgrade: websocket\r\n";
+  wsRequest += "Connection: Upgrade\r\n";
+  wsRequest += "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n";
+  wsRequest += "Sec-WebSocket-Version: 13\r\n\r\n";
+  
+  client.print(wsRequest);
+  
+  // Wait for upgrade response
+  unsigned long timeout = millis();
+  while (client.available() == 0) {
+    if (millis() - timeout > 5000) {
+      Serial.println("Relay connection timeout");
+      client.stop();
+      return false;
+    }
+    delay(10);
+  }
+  
+  // Read upgrade response
+  while (client.available()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r") break;
+  }
+  
+  // Send EVENT message (WebSocket text frame)
+  String eventMsg = "[\"EVENT\"," + event + "]";
+  
+  // WebSocket frame: FIN=1, opcode=1 (text), mask=1, payload
+  uint8_t header[10];
+  int headerLen = 2;
+  header[0] = 0x81;  // FIN + text frame
+  
+  size_t payloadLen = eventMsg.length();
+  if (payloadLen < 126) {
+    header[1] = 0x80 | payloadLen;  // Mask bit + length
+  } else {
+    header[1] = 0x80 | 126;
+    header[2] = (payloadLen >> 8) & 0xFF;
+    header[3] = payloadLen & 0xFF;
+    headerLen = 4;
+  }
+  
+  // Masking key (random)
+  uint8_t mask[4] = {
+    (uint8_t)random(256),
+    (uint8_t)random(256),
+    (uint8_t)random(256),
+    (uint8_t)random(256)
+  };
+  memcpy(header + headerLen, mask, 4);
+  headerLen += 4;
+  
+  // Send header
+  client.write(header, headerLen);
+  
+  // Send masked payload
+  for (size_t i = 0; i < payloadLen; i++) {
+    client.write(eventMsg[i] ^ mask[i % 4]);
+  }
+  
+  // Wait for OK response
+  timeout = millis();
+  bool gotOk = false;
+  while (millis() - timeout < 3000) {
+    if (client.available()) {
+      // Read WebSocket frame
+      uint8_t frameByte = client.read();
+      if ((frameByte & 0x0F) == 0x01) {  // Text frame
+        uint8_t lenByte = client.read();
+        size_t len = lenByte & 0x7F;
+        if (len == 126) {
+          len = (client.read() << 8) | client.read();
+        }
+        
+        String response = "";
+        for (size_t i = 0; i < len && i < 500; i++) {
+          if (client.available()) {
+            response += (char)client.read();
+          }
+        }
+        
+        Serial.println("Relay response: " + response);
+        if (response.indexOf("\"OK\"") >= 0 && response.indexOf("true") >= 0) {
+          gotOk = true;
+          break;
+        }
+      }
+    }
+    delay(10);
+  }
+  
+  client.stop();
+  return gotOk;
 }
 
 // ===========================================
