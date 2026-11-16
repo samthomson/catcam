@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react'
 
 const RELAY = 'wss://relay-catcam.samt.st'
 const AUTHOR = '23168823f2f310372b8a45810608a8947802dd956c07213bc43c6d6b81d64289'
+const REQ_LIMIT = 200
+const QUIET_RECONNECT_MS = 45000 // if the relay goes silent this long, silently resubscribe
 
 function tag(event, name) {
   const t = event.tags?.find((t) => t[0] === name)
@@ -25,52 +27,99 @@ function timeAgo(ts) {
   return `${Math.floor(s / 86400)}d ago`
 }
 
+function caption(ev) {
+  const signal = tag(ev, 'signal')
+  const t = `${new Date(ev.created_at * 1000).toLocaleString()} · ${timeAgo(ev.created_at)}`
+  return signal ? `${t} · ${signal}` : t
+}
+
 export default function App() {
   const [events, setEvents] = useState([])
   const [status, setStatus] = useState('connecting…')
-  const sockRef = useRef(null)
+  const [lightboxId, setLightboxId] = useState(null) // event id
+  const [infoEvent, setInfoEvent] = useState(null) // raw nostr event
+
+  const wsRef = useRef(null)
+  const subRef = useRef(0)
+  const lastMsgRef = useRef(Date.now())
+  const intentionalRef = useRef(false)
 
   useEffect(() => {
-    let closed = false
-    let retry
+    let disposed = false
+    let retryTimer, quietTimer
+
+    const subscribe = (ws) => {
+      subRef.current += 1
+      ws.send(JSON.stringify(['REQ', `cam-${subRef.current}`, { authors: [AUTHOR], kinds: [1], limit: REQ_LIMIT }]))
+    }
 
     const connect = () => {
-      if (closed) return
+      if (disposed) return
       setStatus('connecting…')
       const ws = new WebSocket(RELAY)
-      sockRef.current = ws
+      wsRef.current = ws
 
       ws.onopen = () => {
-        ws.send(JSON.stringify(['REQ', 'cam', { authors: [AUTHOR], kinds: [1], limit: 200 }]))
+        subscribe(ws)
         setStatus('live')
       }
 
       ws.onmessage = (m) => {
+        lastMsgRef.current = Date.now()
         const msg = JSON.parse(m.data)
-        if (msg[0] === 'EVENT' && msg[1] === 'cam') {
+        if (msg[0] === 'EVENT') {
           const ev = msg[2]
           setEvents((prev) =>
             prev.some((e) => e.id === ev.id) ? prev : [...prev, ev].sort((a, b) => b.created_at - a.created_at),
           )
+        } else if (msg[0] === 'CLOSED') {
+          subscribe(ws) // relay ended the subscription (e.g. idle timeout) — open a fresh one
         } else if (msg[0] === 'NOTICE') {
           setStatus(`notice: ${msg[1]}`)
         }
       }
 
       ws.onclose = () => {
-        if (closed) return
-        setStatus('disconnected — retrying')
-        retry = setTimeout(connect, 3000)
+        if (disposed) return
+        setStatus(intentionalRef.current ? 'live' : 'reconnecting…')
+        retryTimer = setTimeout(connect, intentionalRef.current ? 150 : 3000)
+        intentionalRef.current = false
       }
     }
 
+    // watchdog: a silently-dead socket (or an idle-closed subscription) recovers without a flicker
+    quietTimer = setInterval(() => {
+      if (!disposed && Date.now() - lastMsgRef.current > QUIET_RECONNECT_MS) {
+        intentionalRef.current = true
+        wsRef.current?.close()
+      }
+    }, 15000)
+
     connect()
     return () => {
-      closed = true
-      clearTimeout(retry)
-      sockRef.current?.close()
+      disposed = true
+      clearTimeout(retryTimer)
+      clearInterval(quietTimer)
+      wsRef.current?.close()
     }
   }, [])
+
+  const lbIndex = lightboxId === null ? -1 : events.findIndex((e) => e.id === lightboxId)
+  const lbEvent = lbIndex >= 0 ? events[lbIndex] : null
+
+  // Esc closes overlays; arrows navigate the lightbox
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        setLightboxId(null)
+        setInfoEvent(null)
+      }
+      if (lbEvent && e.key === 'ArrowLeft' && lbIndex > 0) setLightboxId(events[lbIndex - 1].id)
+      if (lbEvent && e.key === 'ArrowRight' && lbIndex < events.length - 1) setLightboxId(events[lbIndex + 1].id)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [lbEvent, lbIndex, events])
 
   return (
     <div className="app">
@@ -91,19 +140,58 @@ export default function App() {
             const signal = tag(ev, 'signal')
             return (
               <figure key={ev.id} className="card">
-                <a href={url} target="_blank" rel="noreferrer">
-                  <img src={url} alt="" loading="lazy" />
-                </a>
+                <img src={url} alt="" loading="lazy" onClick={() => setLightboxId(ev.id)} />
                 <figcaption>
-                  <time dateTime={new Date(ev.created_at * 1000).toISOString()}>
+                  <span className="when">
                     {new Date(ev.created_at * 1000).toLocaleString()} · {timeAgo(ev.created_at)}
-                  </time>
-                  {signal && <span className="signal">{signal}</span>}
+                  </span>
+                  <span className="meta">
+                    {signal && <span className="signal">{signal}</span>}
+                    <button className="info" title="raw event" onClick={() => setInfoEvent(ev)}>
+                      i
+                    </button>
+                  </span>
                 </figcaption>
               </figure>
             )
           })}
         </main>
+      )}
+
+      {lbEvent && (
+        <div className="overlay" onClick={() => setLightboxId(null)}>
+          <div className="lb" onClick={(e) => e.stopPropagation()}>
+            <img className="big" src={imageUrl(lbEvent)} alt="" />
+            <div className="lb-cap">
+              <span>{caption(lbEvent)}</span>
+              <button className="info" title="raw event" onClick={() => setInfoEvent(lbEvent)}>
+                i
+              </button>
+            </div>
+          </div>
+          <button
+            className="nav prev"
+            disabled={lbIndex <= 0}
+            onClick={() => lbIndex > 0 && setLightboxId(events[lbIndex - 1].id)}
+          >
+            ‹
+          </button>
+          <button
+            className="nav next"
+            disabled={lbIndex >= events.length - 1}
+            onClick={() => lbIndex < events.length - 1 && setLightboxId(events[lbIndex + 1].id)}
+          >
+            ›
+          </button>
+        </div>
+      )}
+
+      {infoEvent && (
+        <div className="overlay" onClick={() => setInfoEvent(null)}>
+          <pre className="json" onClick={(e) => e.stopPropagation()}>
+            {JSON.stringify(infoEvent, null, 2)}
+          </pre>
+        </div>
       )}
     </div>
   )
