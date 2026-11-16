@@ -23,10 +23,13 @@ main { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr
 .signal { white-space: nowrap; }
 
 .info {
-  border: none; background: none; padding: 0 0 0 2px;
-  color: #778; font: italic 13px/1 Georgia, serif; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 17px; height: 17px; margin-left: 6px;
+  border: 1px solid #4a505c; border-radius: 50%; background: #20242c;
+  color: #9aa0aa; font: italic 11px/1 Georgia, serif; cursor: pointer;
+  transform: translateY(2px);
 }
-.info:hover { color: #6ea8fe; text-decoration: underline; }
+.info:hover { border-color: #6ea8fe; color: #6ea8fe; }
 
 .overlay {
   position: fixed; inset: 0; z-index: 10;
