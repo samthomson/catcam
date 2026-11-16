@@ -6,3 +6,6 @@
 *~
 include/secrets.h
 include/secrets_station*.h
+node_modules/
+catcam-viewer/dist/
+.DS_Store

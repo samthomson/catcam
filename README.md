@@ -12,9 +12,9 @@ ESP32-CAM that takes a photo when the PIR motion sensor detects movement, upload
 1. Copy `include/secrets.h.example` to `include/secrets.h`
 2. Edit with your WiFi credentials, Nostr private key, and Blossom server
 3. Wire it up (see below)
-4. Flash in place any time: spare jumper from `a20` (any free hole in column 20) → − rail, replug USB, `pio run -e esp32cam --target upload`, remove spare jumper, replug
+4. Flash in place any time: spare jumper from `a19` (any free hole of column 19) → − rail/bus, replug USB, `pio run -e esp32cam --target upload`, remove spare jumper, replug
 5. Monitor (any time): `pio device monitor`
-6. After the first wired flash, update over WiFi (no cables/strap): `pio run -e esp32cam -t upload --upload-protocol espota --upload-port <device-ip>`
+6. Photo viewer: `cd catcam-viewer && npm install && npm run dev` — live grid of everything posted, straight from the relay
 
 ## Wiring
 
@@ -34,7 +34,7 @@ Nothing plugs into anything directly. The CAM module is **not** stacked in the M
 | 8 | yellow F–M | PIR OUT | breadboard e20 |
 | 9 | blue F–M | MB socket U0T | CAM pin U0T (permanent) |
 | 10 | blue F–M | MB socket U0R | CAM pin U0R (permanent) |
-| 11 | white F–M | CAM pin 0 | breadboard b20 (permanent) |
+| 11 | purple F–M | CAM pin 0 | breadboard **b19** — its own column; NEVER column 20 (pin 0 is the camera clock and injects a square wave into the motion signal) |
 
 MB's USB is the only power source. HC-SR501 needs the 5V rail (its output is 3.3V-safe for GPIO13). Turn both PIR potentiometers fully anticlockwise and set its jumper to H — the firmware handles re-trigger timing itself. Find every pin/socket by its printed label, not by position.
 
