@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Cat Cam wiring — MB + ESP-32S-CAM + HW-416 PIR, all on jumpers</title>
+<style>
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; max-width: 1280px; margin: 24px auto; padding: 0 16px; color: #1c1c1c; }
+  h1 { font-size: 26px; margin-bottom: 4px; }
+  h2 { font-size: 20px; margin-top: 36px; border-bottom: 2px solid #ddd; padding-bottom: 4px; }
+  .lead { color: #444; font-size: 16px; }
+  table { border-collapse: collapse; font-size: 15px; margin-top: 10px; }
+  th, td { border: 1px solid #bbb; padding: 6px 12px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; }
+  .swatch { display: inline-block; width: 24px; height: 12px; border-radius: 3px; border: 1px solid #555; vertical-align: -1px; margin-right: 5px; }
+  .note { background: #eef6ff; border-left: 4px solid #3a7bd5; padding: 8px 14px; margin: 14px 0; font-size: 15px; }
+  .warn { background: #fdecec; border-left: 4px solid #c0392b; padding: 8px 14px; margin: 14px 0; font-size: 15px; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 12px 16px; border-radius: 6px; font-size: 14px; overflow-x: auto; }
+  svg text { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+  .dim { color: #777; }
+  code { background: #f2f2f2; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>Cat Cam wiring — everything on jumper cables</h1>
+<p class="lead">Three unconnected parts on jumpers — <b>MB</b> (USB power + flashing), <b>ESP-32S-CAM</b> (unstacked, pins free), <b>HW-416 PIR</b> — meeting at the breadboard: rails join +5V and GND, column 20 joins PIR OUT to GPIO13.</p>
+
+<h2>1. The 11 wires</h2>
+<table>
+  <tr><th>#</th><th>Wire</th><th>Type</th><th>Module end</th><th>Breadboard end</th></tr>
+  <tr><td>1</td><td><span class="swatch" style="background:#d42424"></span>red</td><td><b>M–M</b></td><td>MB socket <b>5V</b></td><td>any hole on the <b>+ (red) rail</b></td></tr>
+  <tr><td>2</td><td><span class="swatch" style="background:#1a1a1a"></span>black</td><td><b>M–M</b></td><td>MB socket <b>GND</b></td><td>any hole on the <b>− (blue) rail</b></td></tr>
+  <tr><td>3</td><td><span class="swatch" style="background:#d42424"></span>red</td><td>F–M</td><td>CAM pin <b>5V</b></td><td>any hole on the <b>+ rail</b></td></tr>
+  <tr><td>4</td><td><span class="swatch" style="background:#1a1a1a"></span>black</td><td>F–M</td><td>CAM pin <b>GND</b></td><td>any hole on the <b>− rail</b></td></tr>
+  <tr><td>5</td><td><span class="swatch" style="background:#d42424"></span>red</td><td>F–M</td><td>PIR pin <b>VCC</b></td><td>any hole on the <b>+ rail</b></td></tr>
+  <tr><td>6</td><td><span class="swatch" style="background:#1a1a1a"></span>black</td><td>F–M</td><td>PIR pin <b>GND</b></td><td>any hole on the <b>− rail</b></td></tr>
+  <tr><td>7</td><td><span class="swatch" style="background:#e3b700"></span>yellow</td><td>F–M</td><td>CAM pin <b>13</b></td><td>hole <b>d20</b></td></tr>
+  <tr><td>8</td><td><span class="swatch" style="background:#e3b700"></span>yellow</td><td>F–M</td><td>PIR pin <b>OUT</b></td><td>hole <b>e20</b></td></tr>
+  <tr><td>9</td><td><span class="swatch" style="background:#3a7bd5"></span>blue</td><td>F–M</td><td>MB socket <b>U0T</b></td><td>CAM pin <b>U0T</b> <i>(direct, always attached)</i></td></tr>
+  <tr><td>10</td><td><span class="swatch" style="background:#3a7bd5"></span>blue</td><td>F–M</td><td>MB socket <b>U0R</b></td><td>CAM pin <b>U0R</b> <i>(direct, always attached)</i></td></tr>
+  <tr><td>11</td><td><span class="swatch" style="background:#7a3ab5"></span>purple</td><td>F–M</td><td>CAM pin <b>0</b></td><td>hole <b>b20</b> <i>(always attached)</i></td></tr>
+</table>
+<p class="note"><b>Shopping:</b> 2× M–M (red, black) + 9× F–M (2 red, 2 black, 2 yellow, 2 blue, 1 purple) + 1 spare jumper for the boot strap. MB sockets are female → M–M; CAM/PIR pins are male → F–M. Wires 9–11 (flashing/serial) stay attached permanently.</p>
+<p class="warn">Find every pin/socket by its printed label, not position (PIR pin order varies). CAM: use 5V, not 3V3; any of its several GND pins works.</p>
+
+<h2>2. The diagram</h2>
+<p>Your orientation: numbers 0→60 left-to-right, a–e / f–j top-to-bottom, gap and rails lengthwise. Only top rails + column 20 used.</p>
+<svg viewBox="0 0 1240 900" width="1240" height="900" role="img" aria-label="Wiring diagram">
+  <text x="620" y="28" text-anchor="middle" font-size="19" font-weight="bold">Three modules on jumpers — breadboard is the junction</text>
+
+  <!-- MB (left): USB power, empty female sockets -->
+  <g>
+    <rect x="60" y="140" width="200" height="120" rx="10" fill="#0e6b3c" stroke="#084" stroke-width="2"/>
+    <rect x="38" y="180" width="22" height="32" rx="3" fill="#c9c9d4" stroke="#889"/>
+    <text x="49" y="230" text-anchor="middle" font-size="11" fill="#888">USB</text>
+    <rect x="85" y="150" width="60" height="14" rx="2" fill="#222"/>
+    <rect x="175" y="150" width="60" height="14" rx="2" fill="#222"/>
+    <g fill="#555">
+      <circle cx="95" cy="157" r="2"/><circle cx="107" cy="157" r="2"/><circle cx="119" cy="157" r="2"/><circle cx="131" cy="157" r="2"/><circle cx="143" cy="157" r="2"/>
+      <circle cx="185" cy="157" r="2"/><circle cx="197" cy="157" r="2"/><circle cx="209" cy="157" r="2"/><circle cx="221" cy="157" r="2"/><circle cx="233" cy="157" r="2"/>
+    </g>
+    <text x="160" y="192" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">ESP32-CAM-MB</text>
+    <text x="160" y="208" text-anchor="middle" font-size="11" fill="#cfc">female sockets stay empty</text>
+    <text x="160" y="222" text-anchor="middle" font-size="11" fill="#cfc">(CAM is NOT stacked in it)</text>
+    <g stroke="#021" stroke-width="5">
+      <line x1="150" y1="260" x2="150" y2="272"/>
+      <line x1="190" y1="260" x2="190" y2="272"/>
+      <line x1="260" y1="170" x2="272" y2="170"/>
+      <line x1="260" y1="195" x2="272" y2="195"/>
+    </g>
+    <text x="150" y="256" text-anchor="middle" font-size="12" font-weight="bold" fill="#9fd">5V</text>
+    <text x="190" y="256" text-anchor="middle" font-size="12" font-weight="bold" fill="#9fd">GND</text>
+    <text x="248" y="174" text-anchor="end" font-size="12" font-weight="bold" fill="#9fd">U0T</text>
+    <text x="248" y="199" text-anchor="end" font-size="12" font-weight="bold" fill="#9fd">U0R</text>
+  </g>
+
+  <!-- CAM (middle): unstacked, pins free -->
+  <g>
+    <text x="580" y="95" text-anchor="middle" font-size="10" fill="#3ba0c8" font-style="italic">real board has more pins — go by the printed labels</text>
+    <rect x="480" y="100" width="200" height="160" rx="10" fill="#113344" stroke="#3ba0c8" stroke-width="2"/>
+    <circle cx="580" cy="160" r="38" fill="#1b2a3a" stroke="#7ce" stroke-width="4"/>
+    <circle cx="580" cy="160" r="16" fill="#05131f"/>
+    <text x="580" y="222" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">ESP-32S-CAM</text>
+    <text x="580" y="237" text-anchor="middle" font-size="11" fill="#8cf">unstacked — pins are free</text>
+    <g stroke="#021" stroke-width="5">
+      <line x1="520" y1="260" x2="520" y2="272"/>
+      <line x1="560" y1="260" x2="560" y2="272"/>
+      <line x1="600" y1="260" x2="600" y2="272"/>
+      <line x1="640" y1="260" x2="640" y2="272"/>
+      <line x1="468" y1="170" x2="480" y2="170"/>
+      <line x1="468" y1="195" x2="480" y2="195"/>
+    </g>
+    <g font-size="12" font-weight="bold" fill="#8cf" text-anchor="middle">
+      <text x="520" y="256">GND</text><text x="560" y="256">5V</text><text x="600" y="256">0</text><text x="640" y="256">13</text>
+    </g>
+    <text x="498" y="174" font-size="12" font-weight="bold" fill="#8cf">U0T</text>
+    <text x="498" y="199" font-size="12" font-weight="bold" fill="#8cf">U0R</text>
+  </g>
+
+  <!-- PIR (right): on jumpers, OUT pin rightmost -->
+  <g>
+    <text x="1010" y="95" text-anchor="middle" font-size="10" fill="#0f4d31" font-style="italic">check YOUR board's pin labels — order varies</text>
+    <rect x="900" y="100" width="220" height="160" rx="10" fill="#1d7a4f" stroke="#0f4d31" stroke-width="2.5"/>
+    <circle cx="1010" cy="165" r="38" fill="#f4f6f2" stroke="#ccd" stroke-width="2.5"/>
+    <rect x="918" y="112" width="18" height="18" rx="3" fill="#3a7bd5" stroke="#06c"/>
+    <rect x="1084" y="112" width="18" height="18" rx="3" fill="#3a7bd5" stroke="#06c"/>
+    <text x="927" y="146" text-anchor="middle" font-size="9" fill="#cfe">dials fully left</text>
+    <text x="1093" y="146" text-anchor="middle" font-size="9" fill="#cfe">dials fully left</text>
+    <text x="1010" y="222" text-anchor="middle" font-size="13" font-weight="bold" fill="#fff">HW-416 (HC-SR501)</text>
+    <text x="1010" y="237" text-anchor="middle" font-size="11" fill="#cfe">jumper on H (retrigger)</text>
+    <g stroke="#021" stroke-width="5">
+      <line x1="960" y1="260" x2="960" y2="272"/>
+      <line x1="1000" y1="260" x2="1000" y2="272"/>
+      <line x1="1040" y1="260" x2="1040" y2="272"/>
+    </g>
+    <g font-size="12" font-weight="bold" fill="#fff" text-anchor="middle">
+      <text x="960" y="256">GND</text><text x="1000" y="256">VCC</text><text x="1040" y="256">OUT</text>
+    </g>
+  </g>
+
+  <!-- top power rails (used) -->
+  <line x1="300" y1="330" x2="1100" y2="330" stroke="#c55" stroke-width="4"/>
+  <line x1="300" y1="360" x2="1100" y2="360" stroke="#57a" stroke-width="4"/>
+  <g fill="#c55">
+    <circle cx="340" cy="330" r="3.5"/><circle cx="380" cy="330" r="3.5"/><circle cx="420" cy="330" r="3.5"/><circle cx="460" cy="330" r="3.5"/><circle cx="500" cy="330" r="3.5"/><circle cx="540" cy="330" r="3.5"/><circle cx="580" cy="330" r="3.5"/><circle cx="620" cy="330" r="3.5"/><circle cx="660" cy="330" r="3.5"/><circle cx="700" cy="330" r="3.5"/><circle cx="740" cy="330" r="3.5"/><circle cx="780" cy="330" r="3.5"/><circle cx="820" cy="330" r="3.5"/><circle cx="860" cy="330" r="3.5"/><circle cx="900" cy="330" r="3.5"/><circle cx="940" cy="330" r="3.5"/><circle cx="980" cy="330" r="3.5"/><circle cx="1020" cy="330" r="3.5"/><circle cx="1060" cy="330" r="3.5"/>
+  </g>
+  <g fill="#57a">
+    <circle cx="340" cy="360" r="3.5"/><circle cx="380" cy="360" r="3.5"/><circle cx="420" cy="360" r="3.5"/><circle cx="460" cy="360" r="3.5"/><circle cx="500" cy="360" r="3.5"/><circle cx="540" cy="360" r="3.5"/><circle cx="580" cy="360" r="3.5"/><circle cx="620" cy="360" r="3.5"/><circle cx="660" cy="360" r="3.5"/><circle cx="700" cy="360" r="3.5"/><circle cx="740" cy="360" r="3.5"/><circle cx="780" cy="360" r="3.5"/><circle cx="820" cy="360" r="3.5"/><circle cx="860" cy="360" r="3.5"/><circle cx="900" cy="360" r="3.5"/><circle cx="940" cy="360" r="3.5"/><circle cx="980" cy="360" r="3.5"/><circle cx="1020" cy="360" r="3.5"/><circle cx="1060" cy="360" r="3.5"/>
+  </g>
+  <text x="1112" y="335" font-size="14" font-weight="bold" fill="#a33">+ red rail</text>
+  <text x="1112" y="365" font-size="14" font-weight="bold" fill="#348">− blue rail</text>
+
+  <!-- main board: a–e bright, f–j faded -->
+  <rect x="310" y="400" width="680" height="335" rx="10" fill="#eef3e8" stroke="#99a" stroke-width="2"/>
+  <rect x="312" y="545" width="676" height="30" fill="#dfe6d8" stroke="#bcc6b4"/>
+  <text x="996" y="565" font-size="11" fill="#8a9" font-style="italic">centre gap</text>
+  <g fill="#4a4f55">
+    <g>
+      <circle cx="330" cy="415" r="6"/><circle cx="410" cy="415" r="6"/><circle cx="490" cy="415" r="6"/><circle cx="570" cy="415" r="6"/><circle cx="650" cy="415" r="6"/><circle cx="730" cy="415" r="6"/><circle cx="810" cy="415" r="6"/><circle cx="890" cy="415" r="6"/><circle cx="970" cy="415" r="6"/>
+      <circle cx="330" cy="445" r="6"/><circle cx="410" cy="445" r="6"/><circle cx="490" cy="445" r="6"/><circle cx="570" cy="445" r="6"/><circle cx="650" cy="445" r="6"/><circle cx="730" cy="445" r="6"/><circle cx="810" cy="445" r="6"/><circle cx="890" cy="445" r="6"/><circle cx="970" cy="445" r="6"/>
+      <circle cx="330" cy="475" r="6"/><circle cx="410" cy="475" r="6"/><circle cx="490" cy="475" r="6"/><circle cx="570" cy="475" r="6"/><circle cx="650" cy="475" r="6"/><circle cx="730" cy="475" r="6"/><circle cx="810" cy="475" r="6"/><circle cx="890" cy="475" r="6"/><circle cx="970" cy="475" r="6"/>
+      <circle cx="330" cy="505" r="6"/><circle cx="410" cy="505" r="6"/><circle cx="490" cy="505" r="6"/><circle cx="570" cy="505" r="6"/><circle cx="650" cy="505" r="6"/><circle cx="730" cy="505" r="6"/><circle cx="810" cy="505" r="6"/><circle cx="890" cy="505" r="6"/><circle cx="970" cy="505" r="6"/>
+      <circle cx="330" cy="535" r="6"/><circle cx="410" cy="535" r="6"/><circle cx="490" cy="535" r="6"/><circle cx="570" cy="535" r="6"/><circle cx="650" cy="535" r="6"/><circle cx="730" cy="535" r="6"/><circle cx="810" cy="535" r="6"/><circle cx="890" cy="535" r="6"/><circle cx="970" cy="535" r="6"/>
+    </g>
+    <g opacity="0.3">
+      <circle cx="330" cy="590" r="6"/><circle cx="410" cy="590" r="6"/><circle cx="490" cy="590" r="6"/><circle cx="570" cy="590" r="6"/><circle cx="650" cy="590" r="6"/><circle cx="730" cy="590" r="6"/><circle cx="810" cy="590" r="6"/><circle cx="890" cy="590" r="6"/><circle cx="970" cy="590" r="6"/>
+      <circle cx="330" cy="620" r="6"/><circle cx="410" cy="620" r="6"/><circle cx="490" cy="620" r="6"/><circle cx="570" cy="620" r="6"/><circle cx="650" cy="620" r="6"/><circle cx="730" cy="620" r="6"/><circle cx="810" cy="620" r="6"/><circle cx="890" cy="620" r="6"/><circle cx="970" cy="620" r="6"/>
+      <circle cx="330" cy="650" r="6"/><circle cx="410" cy="650" r="6"/><circle cx="490" cy="650" r="6"/><circle cx="570" cy="650" r="6"/><circle cx="650" cy="650" r="6"/><circle cx="730" cy="650" r="6"/><circle cx="810" cy="650" r="6"/><circle cx="890" cy="650" r="6"/><circle cx="970" cy="650" r="6"/>
+      <circle cx="330" cy="680" r="6"/><circle cx="410" cy="680" r="6"/><circle cx="490" cy="680" r="6"/><circle cx="570" cy="680" r="6"/><circle cx="650" cy="680" r="6"/><circle cx="730" cy="680" r="6"/><circle cx="810" cy="680" r="6"/><circle cx="890" cy="680" r="6"/><circle cx="970" cy="680" r="6"/>
+      <circle cx="330" cy="710" r="6"/><circle cx="410" cy="710" r="6"/><circle cx="490" cy="710" r="6"/><circle cx="570" cy="710" r="6"/><circle cx="650" cy="710" r="6"/><circle cx="730" cy="710" r="6"/><circle cx="810" cy="710" r="6"/><circle cx="890" cy="710" r="6"/><circle cx="970" cy="710" r="6"/>
+    </g>
+  </g>
+  <g font-size="14" fill="#667" text-anchor="end">
+    <text x="303" y="420">a</text><text x="303" y="450">b</text><text x="303" y="480">c</text><text x="303" y="510">d</text><text x="303" y="540">e</text>
+    <text x="303" y="595" opacity="0.4">f</text><text x="303" y="625" opacity="0.4">g</text><text x="303" y="655" opacity="0.4">h</text><text x="303" y="685" opacity="0.4">i</text><text x="303" y="715" opacity="0.4">j</text>
+  </g>
+  <g font-size="14" fill="#667">
+    <text x="998" y="420">a</text><text x="998" y="450">b</text><text x="998" y="480">c</text><text x="998" y="510">d</text><text x="998" y="540">e</text>
+    <text x="998" y="595" opacity="0.4">f</text><text x="998" y="625" opacity="0.4">g</text><text x="998" y="655" opacity="0.4">h</text><text x="998" y="685" opacity="0.4">i</text><text x="998" y="715" opacity="0.4">j</text>
+  </g>
+  <g font-size="14" fill="#556" text-anchor="middle">
+    <text x="330" y="398">16</text><text x="410" y="398">17</text><text x="490" y="398">18</text><text x="570" y="398">19</text><text x="650" y="398" font-weight="bold">20</text><text x="730" y="398">21</text><text x="810" y="398">22</text><text x="890" y="398">23</text><text x="970" y="398">24</text>
+  </g>
+  <g font-size="13" fill="#99a" font-style="italic">
+    <text x="295" y="398" text-anchor="end">… 0</text>
+    <text x="1000" y="398">60 …</text>
+    <text x="650" y="760" text-anchor="middle">numbers run 0–60 left to right · a–e / f–j run top to bottom · only column 20 used</text>
+  </g>
+  <g opacity="0.3">
+    <line x1="310" y1="780" x2="990" y2="780" stroke="#c55" stroke-width="4"/>
+    <line x1="310" y1="805" x2="990" y2="805" stroke="#57a" stroke-width="4"/>
+    <text x="650" y="838" text-anchor="middle" font-size="12" fill="#99a" font-style="italic">bottom power rails + f–j bank: not needed for this circuit (drawn faded)</text>
+  </g>
+
+  <!-- WIRES -->
+  <!-- 1 red M-M: MB 5V -> + rail -->
+  <path d="M 150 272 L 150 295 L 380 295 L 380 326" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 150 272 L 150 295 L 380 295 L 380 326" stroke="#d42424" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 2 black M-M: MB GND -> − rail -->
+  <path d="M 190 272 L 190 315 L 430 315 L 430 356" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 190 272 L 190 315 L 430 315 L 430 356" stroke="#1a1a1a" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 3 red F-M: CAM 5V -> + rail -->
+  <path d="M 560 272 L 560 326" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M 560 272 L 560 326" stroke="#d42424" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- 4 black F-M: CAM GND -> − rail -->
+  <path d="M 520 272 L 520 356" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M 520 272 L 520 356" stroke="#1a1a1a" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- 5 red F-M: PIR VCC -> + rail -->
+  <path d="M 1000 272 L 1000 326" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M 1000 272 L 1000 326" stroke="#d42424" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- 6 black F-M: PIR GND -> − rail -->
+  <path d="M 960 272 L 960 356" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M 960 272 L 960 356" stroke="#1a1a1a" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- 7 yellow F-M: CAM 13 -> straight down between hole columns -> hook into d20 -->
+  <path d="M 640 272 L 640 482 L 650 482 L 650 501" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 640 272 L 640 482 L 650 482 L 650 501" stroke="#e3b700" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 8 yellow F-M: PIR OUT -> right past rail end -> band above board -> down between columns -> left into e20 -->
+  <path d="M 1040 272 L 1040 285 L 1160 285 L 1160 378 L 770 378 L 770 525 L 660 525 L 660 532" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 1040 272 L 1040 285 L 1160 285 L 1160 378 L 770 378 L 770 525 L 660 525 L 660 532" stroke="#e3b700" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- connection dots -->
+  <!-- 9 blue F-M: MB U0T -> CAM U0T (direct) -->
+  <path d="M 272 170 L 468 170" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M 272 170 L 468 170" stroke="#3a7bd5" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- 10 blue F-M: MB U0R -> CAM U0R (direct) -->
+  <path d="M 272 195 L 468 195" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <path d="M 272 195 L 468 195" stroke="#3a7bd5" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- 11 purple F-M: CAM 0 -> b20 -->
+  <path d="M 600 272 L 600 430 L 650 430 L 650 442" stroke="#fff" stroke-width="11" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 600 272 L 600 430 L 650 430 L 650 442" stroke="#7a3ab5" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <g stroke="#fff" stroke-width="2.5">
+    <circle cx="380" cy="330" r="7" fill="#d42424"/>
+    <circle cx="430" cy="360" r="7" fill="#1a1a1a"/>
+    <circle cx="560" cy="330" r="7" fill="#d42424"/>
+    <circle cx="520" cy="360" r="7" fill="#1a1a1a"/>
+    <circle cx="1000" cy="330" r="7" fill="#d42424"/>
+    <circle cx="960" cy="360" r="7" fill="#1a1a1a"/>
+    <circle cx="650" cy="505" r="7" fill="#e3b700"/>
+    <circle cx="650" cy="535" r="7" fill="#e3b700"/>
+    <circle cx="650" cy="445" r="7" fill="#7a3ab5"/>
+  </g>
+  <g font-size="14" font-weight="bold" fill="#111">
+    <text x="666" y="510">d20</text>
+    <text x="666" y="540">e20</text>
+    <text x="666" y="449">b20</text>
+  </g>
+
+  <!-- F/M end markers -->
+  <g font-size="11" font-weight="bold">
+    <text x="158" y="268" fill="#a33">M</text><text x="198" y="268" fill="#348">M</text>
+    <text x="546" y="268" fill="#a33">F</text><text x="506" y="268" fill="#348">F</text><text x="648" y="268" fill="#8f7200">F</text>
+    <text x="948" y="268" fill="#348">F</text><text x="1008" y="268" fill="#a33">F</text><text x="1048" y="268" fill="#8f7200">F</text>
+    <text x="388" y="322" fill="#a33">M</text><text x="438" y="352" fill="#348">M</text>
+    <text x="568" y="322" fill="#a33">M</text><text x="528" y="352" fill="#348">M</text>
+    <text x="982" y="322" fill="#a33">M</text><text x="942" y="352" fill="#348">M</text>
+    <text x="658" y="478" fill="#8f7200">M</text><text x="672" y="520" fill="#8f7200">M</text>
+    <text x="282" y="162" fill="#348">M</text><text x="462" y="162" fill="#348">F</text>
+    <text x="282" y="187" fill="#348">M</text><text x="462" y="187" fill="#348">F</text>
+    <text x="610" y="268" fill="#7a3ab5">F</text><text x="630" y="424" fill="#7a3ab5">M</text>
+  </g>
+
+  <!-- numbered badges -->
+  <g font-size="15" font-weight="bold" text-anchor="middle">
+    <circle cx="265" cy="278" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="265" y="283">1</text>
+    <circle cx="310" cy="336" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="310" y="341">2</text>
+    <circle cx="538" cy="300" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="538" y="305">3</text>
+    <circle cx="498" cy="336" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="498" y="341">4</text>
+    <circle cx="978" cy="300" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="978" y="305">5</text>
+    <circle cx="935" cy="336" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="935" y="341">6</text>
+    <circle cx="612" cy="440" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="612" y="445">7</text>
+    <circle cx="1100" cy="285" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="1100" y="290">8</text>
+    <circle cx="370" cy="152" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="370" y="157">9</text>
+    <circle cx="370" cy="215" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="370" y="220">10</text>
+    <circle cx="575" cy="300" r="12" fill="#fff" stroke="#333" stroke-width="2"/><text x="575" y="305">11</text>
+  </g>
+</svg>
+
+<p class="note">Only <b>filled dots ●</b> connect — crossings arc over the board.</p>
+
+<h2>3. Assembly order</h2>
+<ol>
+  <li>PIR: both dials fully <b>anticlockwise</b>, jumper on <b>H</b>.</li>
+  <li>Lay out MB, unstacked CAM, PIR around the breadboard. USB into MB.</li>
+  <li>Wires <b>1–2</b>: MB 5V/GND → rails.</li>
+  <li>Wires <b>3–6</b>: CAM + PIR power → rails.</li>
+  <li>Wires <b>7–8</b>: CAM 13 → d20, PIR OUT → e20.</li>
+  <li>Wires <b>9–11</b>: MB U0T/U0R → CAM U0T/U0R direct, CAM 0 → b20.</li>
+</ol>
+
+<h2>4. Flashing — in place, no disassembly</h2>
+<p>Wires 9–10 = permanent USB-serial link; wire 11 puts GPIO0 on the breadboard. GPIO0 LOW at power-up = bootloader.</p>
+<ol>
+  <li>Spare jumper: <b>a20 (or c20) → − rail</b> — any <i>free</i> hole in column 20 works; each hole takes one pin, and all five are connected underneath (boot strap).</li>
+  <li>Replug USB (boots into bootloader).</li>
+  <li><pre style="margin:6px 0">pio run -e esp32cam --target upload</pre></li>
+  <li>Remove the spare jumper, replug USB. Wires 1–11 never move; column 20's other holes stay as they are.</li>
+</ol>
+<p class="warn">Remove the strap to run — GPIO0 is the camera clock line (strap left on = black photo, no damage).</p>
+<p class="dim">Monitor any time: <code>pio device monitor</code>. Once running, flash over WiFi instead (no cables, no strap): <code>pio run -e esp32cam -t upload --upload-protocol espota --upload-port &lt;device-ip&gt;</code>.</p>
+
+<h2>5. First run</h2>
+<p>After boot + WiFi + time sync: “Ready! Waiting for motion” — 30 s PIR warm-up, then wave:</p>
+<pre>--- Motion detected! Capturing photo ---
+Upload successful! … Posted to Nostr!</pre>
+<p class="dim">≥5 s between photos; no new photo while one uploads; MB USB is the only power source.</p>
+
+</body>
+</html>

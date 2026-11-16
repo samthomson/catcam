@@ -1,10 +1,8 @@
 #include <Arduino.h>
 
-// Include secrets (WiFi, Nostr keys, Blossom server)
-#ifndef SECRETS_FILE
-  #error "SECRETS_FILE must be defined! Use -DSECRETS_FILE=\"secrets.h\" in platformio.ini"
-#endif
-#include SECRETS_FILE
+// Secrets (WiFi, Nostr keys, Blossom server) — direct include so PlatformIO
+// tracks the file and rebuilds when it changes (macro includes are invisible to it)
+#include "secrets.h"
 
 // ESP32-CAM specific includes
 #include "esp_camera.h"
@@ -17,6 +15,7 @@
 #include <ArduinoJson.h>
   #include <mbedtls/sha256.h>
   #include "uECC.h"
+#include <ArduinoOTA.h>
 
 // ===========================================
 // ESP32-CAM AI-Thinker Pin Definitions
@@ -41,6 +40,13 @@
 // Built-in LED - GPIO4 is the FLASH LED (very bright!)
 // Set to -1 to disable, or 4 to use flash for status
 #define LED_GPIO_NUM      -1  // Disabled - flash is too bright for status
+// ===========================================
+// PIR Motion Sensor (HC-SR501 or AM312)
+// ===========================================
+#define PIR_PIN             13    // GPIO13 - free pin on AI-Thinker ESP32-CAM (camera + PSRAM don't use it)
+#define MOTION_COOLDOWN_MS  5000  // Min time between motion photos
+#define PIR_WARMUP_MS       30000 // Ignore PIR for first 30s after boot (sensor stabilizing)
+
 
 // ===========================================
 // Nostr/Schnorr Signature Constants
@@ -83,7 +89,7 @@ const char* nostrPrivateKeyHex = NOSTR_PRIVKEY;
 const char* blossomServer = BLOSSOM_SERVER;
 const char* nostrRelayHost = NOSTR_RELAY_HOST;
 const char* cameraName = CAMERA_NAME;
-const unsigned long CAPTURE_INTERVAL = 30000;  // 30 seconds
+// (capture timing is driven by the PIR motion sensor, see PIR_PIN above)
 
 String nostrPubkey = "";
 uint8_t privKeyBytes[32];
@@ -98,6 +104,7 @@ camera_fb_t* capturePhoto();
 String uploadToBlossom(camera_fb_t* fb);
 bool publishNostrEvent(const String& imageUrl, int rssi);
 void blinkLED(int times, int delayMs);
+void handleMotionPhoto();
 
 // Crypto functions
 void derivePubkey();
@@ -202,12 +209,17 @@ void setup() {
     pinMode(LED_GPIO_NUM, OUTPUT);
     digitalWrite(LED_GPIO_NUM, HIGH);  // LED off (active LOW)
   }
+
+  // Initialize PIR motion sensor.
+  // Internal pulldown keeps the pin LOW if the sensor is unplugged,
+  // so a missing sensor can't trigger phantom photos.
+  pinMode(PIR_PIN, INPUT_PULLDOWN);
   
   Serial.println("\n===========================================");
   Serial.println("       CAT CAM - ESP32-CAM");
   Serial.println("===========================================");
   Serial.printf("Camera: %s\n", cameraName);
-  Serial.println("Capture interval: 30 seconds");
+  Serial.printf("Motion sensor on GPIO %d, cooldown %lus\n", PIR_PIN, (unsigned long)MOTION_COOLDOWN_MS);
   
   // Initialize random seed and crypto
   randomSeed(analogRead(0) ^ micros());
@@ -229,79 +241,102 @@ void setup() {
   // Sync time (needed for Nostr events)
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   Serial.print("Syncing time");
-  time_t now = time(nullptr);
-  while (now < 1700000000) {
+  time_t nowTime = time(nullptr);
+  while (nowTime < 1700000000) {
     delay(500);
     Serial.print(".");
-    now = time(nullptr);
+    nowTime = time(nullptr);
   }
   Serial.println(" OK");
-  
+
   // Derive Nostr public key
   derivePubkey();
-  
+
+  // Over-the-air updates: after this firmware is flashed once over wire,
+  // future updates go over WiFi (pio run -e esp32cam -t upload --upload-protocol espota --upload-port <ip>).
+  ArduinoOTA.setHostname("catcam");
+  ArduinoOTA.begin();
+  Serial.println("OTA ready (port 8266)");
+
   Serial.println("\n===========================================");
-  Serial.println("Ready! Taking photos every 30 seconds");
+  Serial.println("Ready! Waiting for motion");
   Serial.println("===========================================\n");
 }
 
 // ===========================================
-// Main Loop
+// Main Loop - watch the PIR, trigger on motion
 // ===========================================
 void loop() {
-  static unsigned long lastCapture = 0;
+  ArduinoOTA.handle();
+  static unsigned long lastPhotoStart = 0;  // millis() when the last motion photo began
+  static bool uploadInProgress = false;     // true while capture -> upload -> post is running
   unsigned long now = millis();
-  
-  // Check if it's time to capture
-  if (now - lastCapture >= CAPTURE_INTERVAL || lastCapture == 0) {
-    lastCapture = now;
-    
-    Serial.println("\n--- Capturing photo ---");
-    blinkLED(1, 50);
-    
-    // Capture photo
-    camera_fb_t* fb = capturePhoto();
-    if (fb) {
-      Serial.printf("Photo captured! Size: %u bytes\n", fb->len);
-      
-      // Check WiFi connection
-      if (WiFi.status() != WL_CONNECTED) {
-        Serial.println("WiFi disconnected! Reconnecting...");
-        WiFi.reconnect();
-        delay(5000);
-      }
-      
-      int rssi = WiFi.RSSI();
-      Serial.printf("WiFi signal: %d dBm\n", rssi);
-      
-      // Upload to Blossom
-      String blobUrl = uploadToBlossom(fb);
-      if (blobUrl.length() > 0) {
-        Serial.println("Upload successful!");
-        Serial.println("URL: " + blobUrl);
-        blinkLED(2, 100);
-        
-        // Post to Nostr relay with signal strength
-        if (publishNostrEvent(blobUrl, rssi)) {
-          Serial.println("Posted to Nostr!");
-        } else {
-          Serial.println("Nostr post failed");
-        }
+
+  // PIR output goes HIGH while it detects motion
+  bool motionDetected = (digitalRead(PIR_PIN) == HIGH);
+
+  if (motionDetected &&
+      now >= PIR_WARMUP_MS &&                              // let the PIR stabilize after power-on
+      !uploadInProgress &&                                 // don't start if a photo is still uploading
+      (now - lastPhotoStart >= MOTION_COOLDOWN_MS)) {      // don't retrigger within the cooldown
+    lastPhotoStart = now;
+    uploadInProgress = true;
+    handleMotionPhoto();
+    uploadInProgress = false;
+  }
+
+  delay(100);
+}
+
+
+// ===========================================
+// Motion Photo: capture -> upload -> post
+// (runs to completion; loop() won't start another while this blocks)
+// ===========================================
+void handleMotionPhoto() {
+  Serial.println("\n--- Motion detected! Capturing photo ---");
+  blinkLED(1, 50);
+
+  // Capture photo
+  camera_fb_t* fb = capturePhoto();
+  if (fb) {
+    Serial.printf("Photo captured! Size: %u bytes\n", fb->len);
+
+    // Check WiFi connection
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi disconnected! Reconnecting...");
+      WiFi.reconnect();
+      delay(5000);
+    }
+
+    int rssi = WiFi.RSSI();
+    Serial.printf("WiFi signal: %d dBm\n", rssi);
+
+    // Upload to Blossom
+    String blobUrl = uploadToBlossom(fb);
+    if (blobUrl.length() > 0) {
+      Serial.println("Upload successful!");
+      Serial.println("URL: " + blobUrl);
+      blinkLED(2, 100);
+
+      // Post to Nostr relay with signal strength
+      if (publishNostrEvent(blobUrl, rssi)) {
+        Serial.println("Posted to Nostr!");
       } else {
-        Serial.println("Upload failed!");
-        Serial.printf("WiFi still connected: %s\n", WiFi.status() == WL_CONNECTED ? "yes" : "no");
-        blinkLED(5, 50);
+        Serial.println("Nostr post failed");
       }
-      
-      // Return frame buffer
-      esp_camera_fb_return(fb);
     } else {
-      Serial.println("Capture failed!");
+      Serial.println("Upload failed!");
+      Serial.printf("WiFi still connected: %s\n", WiFi.status() == WL_CONNECTED ? "yes" : "no");
       blinkLED(5, 50);
     }
+
+    // Return frame buffer
+    esp_camera_fb_return(fb);
+  } else {
+    Serial.println("Capture failed!");
+    blinkLED(5, 50);
   }
-  
-  delay(100);
 }
 
 // ===========================================
@@ -508,8 +543,9 @@ String uploadToBlossom(camera_fb_t* fb) {
     
     if (httpCode == 200 || httpCode == 201) {
       // Parse response to get URL
-      StaticJsonDocument<512> doc;
+      StaticJsonDocument<2048> doc;  // blossom responses incl. nip94 tags run ~700B — 512 truncated them
       DeserializationError error = deserializeJson(doc, response);
+      if (error) Serial.printf("JSON parse failed: %s\n", error.c_str());
       if (!error) {
         if (doc.containsKey("url")) {
           result = doc["url"].as<String>();
